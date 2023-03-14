@@ -22,9 +22,11 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	metricpb "skywalking.apache.org/repo/goapi/collect/language/agent/v3"
+	tracespb "skywalking.apache.org/repo/goapi/collect/language/agent/v3"
 	logpb "skywalking.apache.org/repo/goapi/collect/logging/v3"
 )
 
@@ -40,15 +42,22 @@ type metricsClientWithCancel struct {
 	tsec   metricpb.MeterReportService_CollectBatchClient
 }
 
+type tracesClientWithCancel struct {
+	cancel context.CancelFunc
+	tsec   tracespb.TraceSegmentReportService_CollectClient
+}
+
 type swExporter struct {
 	cfg *Config
 	// gRPC clients and connection.
-	logSvcClient    logpb.LogReportServiceClient
-	metricSvcClient metricpb.MeterReportServiceClient
+	logSvcClient     logpb.LogReportServiceClient
+	metricSvcClient  metricpb.MeterReportServiceClient
+	tracesSvcClients tracespb.TraceSegmentReportServiceClient
 	// In any of the channels we keep always NumStreams object (sometimes nil),
 	// to make sure we don't open more than NumStreams RPCs at any moment.
 	logsClients    chan *logsClientWithCancel
 	metricsClients chan *metricsClientWithCancel
+	tracesClients  chan *tracesClientWithCancel
 	grpcClientConn *grpc.ClientConn
 	metadata       metadata.MD
 
@@ -122,6 +131,12 @@ func newMetricsExporter(ctx context.Context, cfg *Config, settings component.Tel
 	return oce
 }
 
+func newTracesExporter(ctx context.Context, cfg *Config, settings component.TelemetrySettings) *swExporter {
+	oce := newSwExporter(ctx, cfg, settings)
+	oce.tracesClients = make(chan *tracesClientWithCancel, oce.cfg.NumStreams)
+	return oce
+}
+
 func (oce *swExporter) pushLogs(_ context.Context, td plog.Logs) error {
 	// Get first available log Client.
 	tClient, ok := <-oce.logsClients
@@ -183,6 +198,38 @@ func (oce *swExporter) pushMetrics(_ context.Context, td pmetric.Metrics) error 
 	return nil
 }
 
+func (oce *swExporter) pushTraces(_ context.Context, td ptrace.Traces) error {
+	// Get first available metric Client.
+	tClient, ok := <-oce.tracesClients
+	if !ok {
+		return errors.New("failed to push traces, Skywalking exporter was already stopped")
+	}
+
+	if tClient == nil {
+		var err error
+		tClient, err = oce.createTracesServiceRPC()
+		if err != nil {
+			// Cannot create an RPC, put back nil to keep the number of streams constant.
+			oce.tracesClients <- nil
+			return err
+		}
+	}
+
+	segments := tracesRecordToSegmentObjectSlice(td)
+	for _, segment := range segments {
+		err := tClient.tsec.Send(segment)
+		if err != nil {
+			// Error received, cancel the context used to create the RPC to free all resources,
+			// put back nil to keep the number of streams constant.
+			tClient.cancel()
+			oce.tracesClients <- nil
+			return err
+		}
+	}
+	oce.tracesClients <- tClient
+	return nil
+}
+
 func (oce *swExporter) createLogServiceRPC() (*logsClientWithCancel, error) {
 	// Initiate the log service by sending over node identifier info.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -211,4 +258,19 @@ func (oce *swExporter) createMetricServiceRPC() (*metricsClientWithCancel, error
 		return nil, fmt.Errorf("MetricServiceClient: %w", err)
 	}
 	return &metricsClientWithCancel{cancel: cancel, tsec: metricClient}, nil
+}
+
+func (oce *swExporter) createTracesServiceRPC() (*tracesClientWithCancel, error) {
+	// Initiate the traces service by sending over node identifier info.
+	ctx, cancel := context.WithCancel(context.Background())
+	if len(oce.cfg.Headers) > 0 {
+		ctx = metadata.NewOutgoingContext(ctx, oce.metadata.Copy())
+	}
+	// Cannot use grpc.WaitForReady(cfg.WaitForReady) because will block forever.
+	tracesClient, err := oce.tracesSvcClients.Collect(ctx)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("TraceServiceClient: %w", err)
+	}
+	return &tracesClientWithCancel{cancel: cancel, tsec: tracesClient}, nil
 }

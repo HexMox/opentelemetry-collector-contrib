@@ -37,7 +37,9 @@ func NewFactory() exporter.Factory {
 		typeStr,
 		createDefaultConfig,
 		exporter.WithLogs(createLogsExporter, stability),
-		exporter.WithMetrics(createMetricsExporter, stability))
+		exporter.WithMetrics(createMetricsExporter, stability),
+		exporter.WithTraces(createTracesExporter, stability),
+	)
 }
 
 func createDefaultConfig() component.Config {
@@ -88,4 +90,21 @@ func createMetricsExporter(ctx context.Context, set exporter.CreateSettings, cfg
 		exporterhelper.WithTimeout(oCfg.TimeoutSettings),
 		exporterhelper.WithStart(oce.start),
 		exporterhelper.WithShutdown(oce.shutdown))
+}
+
+func createTracesExporter(ctx context.Context, set exporter.CreateSettings, cfg component.Config) (exporter.Traces, error) {
+	oCfg := cfg.(*Config)
+	oce := newTracesExporter(ctx, oCfg, set.TelemetrySettings)
+	return exporterhelper.NewTracesExporter(
+		ctx,
+		set,
+		cfg,
+		oce.pushTraces,
+		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
+		exporterhelper.WithRetry(oCfg.RetrySettings),
+		exporterhelper.WithQueue(oCfg.QueueSettings),
+		exporterhelper.WithTimeout(oCfg.TimeoutSettings),
+		exporterhelper.WithStart(oce.start),
+		exporterhelper.WithShutdown(oce.shutdown),
+	)
 }
