@@ -46,7 +46,7 @@ func traceSpanToSwTraceSpan(span ptrace.Span, serviceName string, serviceInstanc
 		pair := &v3.KeyStringValuePair{
 			// Key: "otel." + k,
 			Key:   k,
-			Value: v.AsString(),
+			Value: v.Str(),
 		}
 		swTags = append(swTags, pair)
 		return true
@@ -67,7 +67,7 @@ func traceSpanToSwTraceSpan(span ptrace.Span, serviceName string, serviceInstanc
 		eventAttrs.Range(func(k string, v pcommon.Value) bool {
 			data = append(data, &v3.KeyStringValuePair{
 				Key:   k,
-				Value: v.AsString(),
+				Value: v.Str(),
 			})
 			return true
 		})
@@ -89,7 +89,7 @@ func traceSpanToSwTraceSpan(span ptrace.Span, serviceName string, serviceInstanc
 		ParentSpanId:          0,
 		ParentService:         serviceName,
 		ParentServiceInstance: serviceInstance,
-		ParentEndpoint:        attrParentEndPoint.AsString(),
+		ParentEndpoint:        attrParentEndPoint.Str(),
 		// NetworkAddressUsedAtPeer: ,
 	})
 
@@ -131,15 +131,15 @@ func tracesRecordToSegmentObjectSlice(
 
 			for k := 0; k < scopeSpans.Len(); k++ {
 				span := scopeSpans.At(k)
-				swSpan := traceSpanToSwTraceSpan(span, serviceName.AsString(), serviceInstance.AsString())
+				swSpan := traceSpanToSwTraceSpan(span, serviceName.Str(), serviceInstance.Str())
 				segment := &tracepb.SegmentObject{
 					TraceId:        span.TraceID().String(),
 					TraceSegmentId: span.SpanID().String(),
 					Spans: []*tracepb.SpanObject{
 						swSpan,
 					},
-					Service:         serviceName.AsString(),
-					ServiceInstance: serviceInstance.AsString(),
+					Service:         serviceName.Str(),
+					ServiceInstance: serviceInstance.Str(),
 				}
 				segments = append(segments, segment)
 			}
