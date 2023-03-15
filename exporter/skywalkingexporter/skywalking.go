@@ -25,8 +25,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-	metricpb "skywalking.apache.org/repo/goapi/collect/language/agent/v3"
-	tracespb "skywalking.apache.org/repo/goapi/collect/language/agent/v3"
+	v3pb "skywalking.apache.org/repo/goapi/collect/language/agent/v3"
 	logpb "skywalking.apache.org/repo/goapi/collect/logging/v3"
 )
 
@@ -39,20 +38,20 @@ type logsClientWithCancel struct {
 
 type metricsClientWithCancel struct {
 	cancel context.CancelFunc
-	tsec   metricpb.MeterReportService_CollectBatchClient
+	tsec   v3pb.MeterReportService_CollectBatchClient
 }
 
 type tracesClientWithCancel struct {
 	cancel context.CancelFunc
-	tsec   tracespb.TraceSegmentReportService_CollectClient
+	tsec   v3pb.TraceSegmentReportService_CollectClient
 }
 
 type swExporter struct {
 	cfg *Config
 	// gRPC clients and connection.
 	logSvcClient     logpb.LogReportServiceClient
-	metricSvcClient  metricpb.MeterReportServiceClient
-	tracesSvcClients tracespb.TraceSegmentReportServiceClient
+	metricSvcClient  v3pb.MeterReportServiceClient
+	tracesSvcClients v3pb.TraceSegmentReportServiceClient
 	// In any of the channels we keep always NumStreams object (sometimes nil),
 	// to make sure we don't open more than NumStreams RPCs at any moment.
 	logsClients    chan *logsClientWithCancel
@@ -96,7 +95,7 @@ func (oce *swExporter) start(ctx context.Context, host component.Host) error {
 	}
 
 	if oce.metricsClients != nil {
-		oce.metricSvcClient = metricpb.NewMeterReportServiceClient(oce.grpcClientConn)
+		oce.metricSvcClient = v3pb.NewMeterReportServiceClient(oce.grpcClientConn)
 		// Try to create rpc clients now.
 		for i := 0; i < oce.cfg.NumStreams; i++ {
 			// Populate the channel with NumStreams nil RPCs to keep the number of streams
@@ -104,6 +103,14 @@ func (oce *swExporter) start(ctx context.Context, host component.Host) error {
 			oce.metricsClients <- nil
 		}
 	}
+
+	if oce.tracesClients != nil {
+		oce.tracesSvcClients = v3pb.NewTraceSegmentReportServiceClient(oce.grpcClientConn)
+		for i := 0; i < oce.cfg.NumStreams; i++ {
+			oce.tracesClients <- nil
+		}
+	}
+
 	return nil
 }
 
@@ -115,6 +122,18 @@ func (oce *swExporter) shutdown(context.Context) error {
 		}
 		// Now close the channel
 		close(oce.logsClients)
+	}
+	if oce.metricsClients != nil {
+		for i := 0; i < oce.cfg.NumStreams; i++ {
+			<-oce.metricsClients
+		}
+		close(oce.metricsClients)
+	}
+	if oce.tracesClients != nil {
+		for i := 0; i < oce.cfg.NumStreams; i++ {
+			<-oce.tracesClients
+		}
+		close(oce.tracesClients)
 	}
 	return oce.grpcClientConn.Close()
 }
