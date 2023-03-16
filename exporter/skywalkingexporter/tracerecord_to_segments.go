@@ -50,7 +50,7 @@ func spanKindToSwSpanType(kind ptrace.SpanKind) (t tracepb.SpanType) {
 
 func traceSpanToSwTraceSpan(span ptrace.Span, serviceName string, serviceInstance string) (swSpan *tracepb.SpanObject) {
 	attrs := span.Attributes()
-	swTags := make([]*v3.KeyStringValuePair, 10, 20)
+	swTags := make([]*v3.KeyStringValuePair, 1, 20)
 	attrs.Range(func(k string, v pcommon.Value) bool {
 		if k != "" && v.Type() != pcommon.ValueTypeEmpty {
 			pair := &v3.KeyStringValuePair{
@@ -64,7 +64,7 @@ func traceSpanToSwTraceSpan(span ptrace.Span, serviceName string, serviceInstanc
 	})
 
 	events := span.Events()
-	swLogs := make([]*tracepb.Log, 10, 20)
+	swLogs := make([]*tracepb.Log, 1, 20)
 	for i := 0; i < events.Len(); i++ {
 		event := events.At(i)
 		eventName := event.Name()
