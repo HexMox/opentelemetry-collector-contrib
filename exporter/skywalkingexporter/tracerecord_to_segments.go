@@ -21,6 +21,15 @@ import (
 	tracepb "skywalking.apache.org/repo/goapi/collect/language/agent/v3"
 )
 
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func spanKindToSwSpanType(kind ptrace.SpanKind) (t tracepb.SpanType) {
 	switch kind {
 	case ptrace.SpanKindConsumer:
@@ -43,12 +52,14 @@ func traceSpanToSwTraceSpan(span ptrace.Span, serviceName string, serviceInstanc
 	attrs := span.Attributes()
 	swTags := make([]*v3.KeyStringValuePair, 10, 20)
 	attrs.Range(func(k string, v pcommon.Value) bool {
-		pair := &v3.KeyStringValuePair{
-			// Key: "otel." + k,
-			Key:   k,
-			Value: v.Str(),
+		if k != "" && v.Type() != pcommon.ValueTypeEmpty {
+			pair := &v3.KeyStringValuePair{
+				// Key: "otel." + k,
+				Key:   k,
+				Value: v.AsString(),
+			}
+			swTags = append(swTags, pair)
 		}
-		swTags = append(swTags, pair)
 		return true
 	})
 
@@ -65,15 +76,17 @@ func traceSpanToSwTraceSpan(span ptrace.Span, serviceName string, serviceInstanc
 			Value: eventName,
 		})
 		eventAttrs.Range(func(k string, v pcommon.Value) bool {
-			data = append(data, &v3.KeyStringValuePair{
-				Key:   k,
-				Value: v.Str(),
-			})
+			if k != "" && v.Type() != pcommon.ValueTypeEmpty {
+				data = append(data, &v3.KeyStringValuePair{
+					Key:   k,
+					Value: v.AsString(),
+				})
+			}
 			return true
 		})
 
 		swLogs = append(swLogs, &tracepb.Log{
-			Time: event.Timestamp().AsTime().Unix(),
+			Time: event.Timestamp().AsTime().UnixMilli(),
 			Data: data,
 		})
 	}
@@ -121,6 +134,7 @@ func tracesRecordToSegmentObjectSlice(
 		resAttrs := resSpan.Resource().Attributes()
 		serviceName, _ := resAttrs.Get("service.name")
 		serviceInstance, _ := resAttrs.Get("service.instance.id")
+		serviceVersion, _ := resAttrs.Get("service.version")
 
 		// fmt.Println("Resource attributes", resSpan.Resource().Attributes())
 		resSpanSlices := resSpan.ScopeSpans()
@@ -139,7 +153,7 @@ func tracesRecordToSegmentObjectSlice(
 						swSpan,
 					},
 					Service:         serviceName.Str(),
-					ServiceInstance: serviceInstance.Str(),
+					ServiceInstance: firstNonEmpty(serviceInstance.Str(), serviceVersion.Str()),
 				}
 				segments = append(segments, segment)
 			}
