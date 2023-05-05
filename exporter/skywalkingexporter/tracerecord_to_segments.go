@@ -101,7 +101,7 @@ func traceSpanToSwTraceSpan(span ptrace.Span, serviceName string, serviceInstanc
 		RefType:               tracepb.RefType_CrossThread,
 		TraceId:               span.TraceID().String(),
 		ParentTraceSegmentId:  span.ParentSpanID().String(),
-		ParentSpanId:          -1,
+		ParentSpanId:          0,
 		ParentService:         serviceName,
 		ParentServiceInstance: serviceInstance,
 		ParentEndpoint:        attrParentEndPoint.AsString(),
