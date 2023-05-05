@@ -110,8 +110,8 @@ func traceSpanToSwTraceSpan(span ptrace.Span, serviceName string, serviceInstanc
 	swSpan = &tracepb.SpanObject{
 		SpanId:        0,
 		ParentSpanId:  -1,
-		StartTime:     span.StartTimestamp().AsTime().Unix(),
-		EndTime:       span.EndTimestamp().AsTime().Unix(),
+		StartTime:     span.StartTimestamp().AsTime().UnixMilli(),
+		EndTime:       span.EndTimestamp().AsTime().UnixMilli(),
 		Refs:          swRefs,
 		OperationName: span.Name(),
 		SpanType:      spanKindToSwSpanType(span.Kind()),
