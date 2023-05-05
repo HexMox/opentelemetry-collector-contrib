@@ -15,6 +15,8 @@
 package skywalkingexporter // import "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/skywalkingexporter"
 
 import (
+	"net/url"
+
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	v3 "skywalking.apache.org/repo/goapi/collect/common/v3"
@@ -99,21 +101,29 @@ func traceSpanToSwTraceSpan(span ptrace.Span, serviceName string, serviceInstanc
 		RefType:               tracepb.RefType_CrossThread,
 		TraceId:               span.TraceID().String(),
 		ParentTraceSegmentId:  span.ParentSpanID().String(),
-		ParentSpanId:          0,
+		ParentSpanId:          -1,
 		ParentService:         serviceName,
 		ParentServiceInstance: serviceInstance,
-		ParentEndpoint:        attrParentEndPoint.Str(),
+		ParentEndpoint:        attrParentEndPoint.AsString(),
 		// NetworkAddressUsedAtPeer: ,
 	})
 
-	// span.Status().Message()
+	name := span.Name()
+	method, _ := attrs.Get("http.method")
+	rawURL := attrParentEndPoint.AsString()
+	if method.AsString() != "" && rawURL != "" {
+		parsedURL, parsedErr := url.Parse(rawURL)
+		if parsedErr == nil {
+			name = method.AsString() + parsedURL.Path
+		}
+	}
 	swSpan = &tracepb.SpanObject{
 		SpanId:        0,
 		ParentSpanId:  -1,
 		StartTime:     span.StartTimestamp().AsTime().UnixMilli(),
 		EndTime:       span.EndTimestamp().AsTime().UnixMilli(),
 		Refs:          swRefs,
-		OperationName: span.Name(),
+		OperationName: name,
 		SpanType:      spanKindToSwSpanType(span.Kind()),
 		SpanLayer:     tracepb.SpanLayer_Unknown,
 		// ComponentId
