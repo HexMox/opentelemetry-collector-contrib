@@ -235,10 +235,8 @@ func (oce *swExporter) pushTraces(_ context.Context, td ptrace.Traces) error {
 	}
 
 	segments := tracesRecordToSegmentObjectSlice(td)
-	fmt.Println(">>> segments length: ", len(segments))
 	for _, segment := range segments {
 		err := tClient.tsec.Send(segment)
-		fmt.Println(">>> send segment: ", segment.TraceId, err)
 		if err != nil {
 			// Error received, cancel the context used to create the RPC to free all resources,
 			// put back nil to keep the number of streams constant.
