@@ -1,16 +1,5 @@
-// Copyright 2020, OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 //go:build !windows
 // +build !windows
@@ -20,6 +9,7 @@
 package kubelet
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"io"
@@ -41,6 +31,7 @@ import (
 
 const certPath = "./testdata/testcert.crt"
 const keyFile = "./testdata/testkey.key"
+const errSignedByUnknownCA = "tls: failed to verify certificate: x509: certificate signed by unknown authority"
 
 func TestClient(t *testing.T) {
 	tr := &fakeRoundTripper{}
@@ -113,15 +104,53 @@ func TestDefaultTLSClient(t *testing.T) {
 }
 
 func TestSvcAcctClient(t *testing.T) {
-	p := &saClientProvider{
-		endpoint:   "localhost:9876",
-		caCertPath: certPath,
-		tokenPath:  "./testdata/token",
-		logger:     zap.NewNop(),
-	}
-	cl, err := p.BuildClient()
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		// Check if call is authenticated using token from test file
+		require.Equal(t, req.Header.Get("Authorization"), "Bearer s3cr3t")
+		_, err := rw.Write([]byte(`OK`))
+		require.NoError(t, err)
+	}))
+	cert, err := tls.LoadX509KeyPair(certPath, keyFile)
 	require.NoError(t, err)
-	require.Equal(t, "s3cr3t", string(cl.(*clientImpl).tok))
+	server.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
+	server.StartTLS()
+	defer server.Close()
+
+	p := &saClientProvider{
+		endpoint:           server.Listener.Addr().String(),
+		caCertPath:         certPath,
+		tokenPath:          "./testdata/token",
+		insecureSkipVerify: false,
+		logger:             zap.NewNop(),
+	}
+	client, err := p.BuildClient()
+	require.NoError(t, err)
+	resp, err := client.Get("/")
+	require.NoError(t, err)
+	require.Equal(t, []byte(`OK`), resp)
+}
+
+func TestSAClientBadTLS(t *testing.T) {
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		_, _ = rw.Write([]byte(`OK`))
+	}))
+	cert, err := tls.LoadX509KeyPair(certPath, keyFile)
+	require.NoError(t, err)
+	server.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
+	server.StartTLS()
+	defer server.Close()
+
+	p := &saClientProvider{
+		endpoint:           server.Listener.Addr().String(),
+		caCertPath:         "./testdata/mismatch.crt",
+		tokenPath:          "./testdata/token",
+		insecureSkipVerify: false,
+		logger:             zap.NewNop(),
+	}
+	client, err := p.BuildClient()
+	require.NoError(t, err)
+	_, err = client.Get("/")
+	require.ErrorContains(t, err, errSignedByUnknownCA)
 }
 
 func TestNewKubeConfigClient(t *testing.T) {
@@ -279,7 +308,6 @@ func TestBuildReq(t *testing.T) {
 	req, err := cl.(*clientImpl).buildReq("/foo")
 	require.NoError(t, err)
 	require.NotNil(t, req)
-	require.Equal(t, req.Header["Authorization"][0], "bearer s3cr3t")
 }
 
 func TestBuildBadReq(t *testing.T) {

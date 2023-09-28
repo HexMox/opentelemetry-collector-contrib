@@ -1,16 +1,5 @@
-// Copyright 2020, OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package awscloudwatchlogsexporter // import "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/awscloudwatchlogsexporter"
 
@@ -37,7 +26,7 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/aws/cwlogs"
 )
 
-type exporter struct {
+type cwlExporter struct {
 	Config           *Config
 	logger           *zap.Logger
 	retryCount       int
@@ -58,7 +47,7 @@ type emfMetadata struct {
 	LogStreamName string       `json:"log_stream_name,omitempty"`
 }
 
-func newCwLogsPusher(expConfig *Config, params exp.CreateSettings) (*exporter, error) {
+func newCwLogsPusher(expConfig *Config, params exp.CreateSettings) (*cwlExporter, error) {
 	if expConfig == nil {
 		return nil, errors.New("awscloudwatchlogs exporter config is nil")
 	}
@@ -72,7 +61,7 @@ func newCwLogsPusher(expConfig *Config, params exp.CreateSettings) (*exporter, e
 	}
 
 	// create CWLogs client with aws session config
-	svcStructuredLog := cwlogs.NewClient(params.Logger, awsConfig, params.BuildInfo, expConfig.LogGroupName, expConfig.LogRetention, session)
+	svcStructuredLog := cwlogs.NewClient(params.Logger, awsConfig, params.BuildInfo, expConfig.LogGroupName, expConfig.LogRetention, expConfig.Tags, session)
 	collectorIdentifier, err := uuid.NewRandom()
 
 	if err != nil {
@@ -90,7 +79,7 @@ func newCwLogsPusher(expConfig *Config, params exp.CreateSettings) (*exporter, e
 
 	pusherMap[pusherKey] = pusher
 
-	logsExporter := &exporter{
+	logsExporter := &cwlExporter{
 		svcStructuredLog: svcStructuredLog,
 		Config:           expConfig,
 		logger:           params.Logger,
@@ -119,7 +108,7 @@ func newCwLogsExporter(config component.Config, params exp.CreateSettings) (exp.
 	)
 }
 
-func (e *exporter) consumeLogs(_ context.Context, ld plog.Logs) error {
+func (e *cwlExporter) consumeLogs(_ context.Context, ld plog.Logs) error {
 	logEvents, _ := logsToCWLogs(e.logger, ld, e.Config)
 	if len(logEvents) == 0 {
 		return nil
@@ -157,7 +146,7 @@ func (e *exporter) consumeLogs(_ context.Context, ld plog.Logs) error {
 	return nil
 }
 
-func (e *exporter) getLogPusher(logEvent *cwlogs.Event) cwlogs.Pusher {
+func (e *cwlExporter) getLogPusher(logEvent *cwlogs.Event) cwlogs.Pusher {
 	e.pusherMapLock.Lock()
 	defer e.pusherMapLock.Unlock()
 	pusherKey := cwlogs.PusherKey{
@@ -171,7 +160,7 @@ func (e *exporter) getLogPusher(logEvent *cwlogs.Event) cwlogs.Pusher {
 	return e.pusherMap[pusherKey]
 }
 
-func (e *exporter) shutdown(_ context.Context) error {
+func (e *cwlExporter) shutdown(_ context.Context) error {
 	if e.pusherMap != nil {
 		for _, pusher := range e.pusherMap {
 			pusher.ForceFlush()

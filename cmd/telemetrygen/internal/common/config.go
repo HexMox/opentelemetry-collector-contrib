@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package common
 
@@ -55,15 +44,17 @@ func (v *KeyValue) Type() string {
 }
 
 type Config struct {
-	WorkerCount       int
-	Rate              int64
-	TotalDuration     time.Duration
-	ReportingInterval time.Duration
+	WorkerCount           int
+	Rate                  int64
+	TotalDuration         time.Duration
+	ReportingInterval     time.Duration
+	SkipSettingGRPCLogger bool
 
 	// OTLP config
 	Endpoint           string
 	Insecure           bool
 	UseHTTP            bool
+	HTTPPath           string
 	Headers            KeyValue
 	ResourceAttributes KeyValue
 }
@@ -86,17 +77,20 @@ func (c *Config) CommonFlags(fs *pflag.FlagSet) {
 	fs.DurationVar(&c.TotalDuration, "duration", 0, "For how long to run the test")
 	fs.DurationVar(&c.ReportingInterval, "interval", 1*time.Second, "Reporting interval (default 1 second)")
 
-	fs.StringVar(&c.Endpoint, "otlp-endpoint", "localhost:4317", "Target to which the exporter is going to send metrics. This MAY be configured to include a path (e.g. example.com/v1/metrics)")
+	fs.StringVar(&c.Endpoint, "otlp-endpoint", "localhost:4317", "Target to which the exporter is going to send metrics.")
 	fs.BoolVar(&c.Insecure, "otlp-insecure", false, "Whether to enable client transport security for the exporter's grpc or http connection")
 	fs.BoolVar(&c.UseHTTP, "otlp-http", false, "Whether to use HTTP exporter rather than a gRPC one")
+	fs.StringVar(&c.HTTPPath, "otlp-http-url-path", "/v1/metrics", "Which URL path to write to (default /v1/metrics)")
 
 	// custom headers
 	c.Headers = make(map[string]string)
-	fs.Var(&c.Headers, "otlp-header", "Custom header to be passed along with each OTLP request. The value is expected in the format key=value."+
+	fs.Var(&c.Headers, "otlp-header", "Custom header to be passed along with each OTLP request. The value is expected in the format key=\"value\"."+
+		"Note you may need to escape the quotes when using the tool from a cli."+
 		"Flag may be repeated to set multiple headers (e.g -otlp-header key1=value1 -otlp-header key2=value2)")
 
 	// custom resource attributes
 	c.ResourceAttributes = make(map[string]string)
 	fs.Var(&c.ResourceAttributes, "otlp-attributes", "Custom resource attributes to use. The value is expected in the format key=\"value\"."+
+		"Note you may need to escape the quotes when using the tool from a cli."+
 		"Flag may be repeated to set multiple attributes (e.g -otlp-attributes key1=\"value1\" -otlp-attributes key2=\"value2\")")
 }
