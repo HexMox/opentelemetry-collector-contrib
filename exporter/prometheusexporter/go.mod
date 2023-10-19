@@ -1,4 +1,4 @@
-module github.com/open-telemetry/opentelemetry-collector-contrib/exporter/prometheusexporter
+module github.com/HexMox/opentelemetry-collector-contrib/exporter/prometheusexporter
 
 go 1.20
 
